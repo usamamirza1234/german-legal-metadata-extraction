@@ -1,0 +1,30 @@
+pdfplumber
+spacy
+scikit-learn
+transformers
+torch
+# torchvision
+# transformers
+# spacy
+# pandas
+# numpy
+# opencv-python
+# pytesseract
+# pdf2image
+# pdfplumber
+# scikit-learn
+# matplotlib
+# seaborn
+# datasets
+# evaluate
+# accelerate
+
+# Install spaCy models
+# python -m spacy download de_core_news_sm
+# python -m spacy download en_core_web_sm
+
+
+# PDF Metadata Extractor with OCR Support
+# Install: pip install pdfplumber pytesseract pillow pdf2image
+# Also install Tesseract: https://github.com/UB-Mannheim/tesseract/wiki
+# pip install --upgrade --user charset_normalizer
