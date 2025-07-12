@@ -14,17 +14,8 @@ class PDFExtractorWithOCR:
         if self.debug:
             print("✅ PDF Extractor with OCR initialized")
 
-        # Test if Tesseract is available
-        try:
-            pytesseract.get_tesseract_version()
-            print("✅ Tesseract OCR is available")
-        except:
-            print("⚠️ Tesseract not found. Install from: https://github.com/UB-Mannheim/tesseract/wiki")
-            print("   For Windows: Download and install tesseract-ocr-w64-setup-v5.3.0.exe")
-
-        self.extractor = ExtractorOCRText(self.debug)
-        self.date_extractor = ExtractorGermanDate(self.debug)
-
+        pytesseract.get_tesseract_version()
+        print("✅ Tesseract OCR is available")
 
 
 
@@ -39,8 +30,8 @@ class PDFExtractorWithOCR:
         text = ""
 
         try:
-            text = self.extractor.extract_text_from_pdf(pdf_path, start_page=2, end_page=2)
-
+            extractor = ExtractorOCRText(self.debug)
+            text = extractor.extract_text_from_pdf(pdf_path, start_page=start_page, end_page=end_page)
         except Exception as e:
             print(f"❌ Error processing {pdf_path}: {e}")
             return ""
@@ -60,10 +51,7 @@ class PDFExtractorWithOCR:
 
         metadata = {}
         metadata_extractors = ExtractorMetadata(self.debug)
-
         metadata['date'] = metadata_extractors.extract_date(text)
-
-
         return metadata
 
 

@@ -70,7 +70,8 @@ class ExtractorOCRText:
                 if end_page is None or end_page > total_pages:
                     end_page = total_pages
 
-                print(f"📄 Processing pages {start_page} to {end_page} of {total_pages} in {os.path.basename(pdf_path)}")
+                print(f"📄 Processing pages {start_page} to {end_page} of {total_pages} ..... "
+                      f"in {os.path.basename(pdf_path)}")
 
                 for i in range(start_page - 1, end_page):
                     page = pdf.pages[i]
