@@ -11,11 +11,15 @@ from extractors.extractor_ocr_text import ExtractorOCRText
 class PDFExtractorWithOCR:
     def __init__(self, debug=False):
         self.debug = debug
+
         if self.debug:
-            print("✅ PDF Extractor with OCR initialized")
+            print("✅ PDFExtractorWithOCR.init PDF Extractor with OCR initialized")
 
         pytesseract.get_tesseract_version()
-        print("✅ Tesseract OCR is available")
+
+        if self.debug:
+            print("✅ Tesseract OCR is available")
+
 
 
 
