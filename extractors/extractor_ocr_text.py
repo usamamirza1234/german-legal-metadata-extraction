@@ -16,53 +16,13 @@ class ExtractorOCRText:
     def __init__(self, debug=False):
         self.debug = debug
 
-    def extract_with_improved_ocr(self, pdf_path, page_num=1):
-        """
-        Extract text using improved OCR with multiple attempts
-        """
-        try:
-            print(f"      🖼️ Converting page {page_num} to high-quality image...")
-
-            # Convert with higher DPI for better quality
-            pages = convert_from_path(pdf_path, first_page=page_num, last_page=page_num,
-                                      dpi=300)  # Higher DPI for better quality
-
-            if not pages:
-                return ""
-            image_path = "temp/original_page.png"
-            original_image = pages[0]
-            original_image.save(image_path)
-
-            if self.debug:
-                print("💾 Saved original image as 'temp/original_page.png'")
-
-            # Initialize preprocessor
-            preprocessor = ImagePreprocessor(image_path)
-            output_dir = "output_dir/"
-            save_intermediate = True
-
-            # Create output directory if it doesn't exist
-            os.makedirs(output_dir, exist_ok=True)
-
-            # 1. Inverted Images
-            inverted_image = preprocessor.invert_image()
-            if save_intermediate:
-                inverted_path = f"{output_dir}inverted.jpg"
-                cv2.imwrite(inverted_path, inverted_image)
-                print("Text after inversion:")
-                print(preprocessor.extract_fraktur_text(inverted_path))
-                #preprocessor.display(inverted_path)
-
-        except Exception as e:
-            print(f"      ❌ OCR extraction failed: {e}")
-            return ""
-
     def extract_text_from_pdf(self, pdf_path, start_page=1, end_page=None):
         """
         Extract text from PDF with improved OCR
         """
         text = ""
-
+        if self.debug:
+            print("✅ ExtractorOCRText.extract_text_from_pdf: ")
         try:
             import pdfplumber
             with pdfplumber.open(pdf_path) as pdf:
@@ -78,6 +38,7 @@ class ExtractorOCRText:
                     print(f"📖 Processing page {i + 1}...")
 
                     ocr_text = self.extract_with_improved_ocr(pdf_path, page_num=i + 1)
+
                     if ocr_text and ocr_text.strip():
                         print(f"   ✅ OCR extraction: {len(ocr_text)} characters")
                         text += f"\n--- Page {i + 1} (OCR) ---\n{ocr_text}"
@@ -91,6 +52,48 @@ class ExtractorOCRText:
 
         return text
 
+    def extract_with_improved_ocr(self, pdf_path, page_num=1):
+        """
+        Extract text using improved OCR with multiple attempts
+        """
+        try:
+            if self.debug:
+                print("✅ ExtractorOCRText.extract_with_improved_ocr: ")
+            print(f"      🖼️ Converting page {page_num} to high-quality image...")
+
+            # Convert with higher DPI for better quality
+            pages = convert_from_path(pdf_path, first_page=page_num, last_page=page_num,
+                                      dpi=300)  # Higher DPI for better quality
+            output_dir = "output_dir/"
+            # Create output directory if it doesn't exist
+            os.makedirs(output_dir, exist_ok=True)
+
+
+            if not pages:
+                return ""
+            image_path = "output_dir/original_page.png"
+            original_image = pages[0]
+            original_image.save(image_path)
+
+            if self.debug:
+                print("💾 Saved original image as 'output_dir/original_page.png'")
+
+            # Initialize preprocessor
+            preprocessor = ImagePreprocessor(image_path)
+            save_intermediate = True
+
+            # 1. Inverted Images
+            inverted_image = preprocessor.invert_image()
+            if save_intermediate:
+                inverted_path = f"{output_dir}inverted.jpg"
+                cv2.imwrite(inverted_path, inverted_image)
+                print("Text after inversion:")
+                # print(preprocessor.extract_fraktur_text(inverted_path))
+                #preprocessor.display(inverted_path)
+                return preprocessor.extract_fraktur_text(inverted_path)
+        except Exception as e:
+            print(f"      ❌ OCR extraction failed: {e}")
+            return ""
 #
 # def extract_with_improved_ocr(self, pdf_path, page_num=1):
 #        """

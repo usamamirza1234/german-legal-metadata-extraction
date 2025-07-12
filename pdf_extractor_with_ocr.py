@@ -30,6 +30,8 @@ class PDFExtractorWithOCR:
         text = ""
 
         try:
+            if self.debug:
+                print("✅ PDFExtractorWithOCR.extract_text_from_pdf: ")
             extractor = ExtractorOCRText(self.debug)
             text = extractor.extract_text_from_pdf(pdf_path, start_page=start_page, end_page=end_page)
         except Exception as e:
