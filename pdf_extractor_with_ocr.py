@@ -57,8 +57,22 @@ class PDFExtractorWithOCR:
 
         metadata = {}
         metadata_extractors = ExtractorMetadata(self.debug)
-        metadata['date'] = metadata_extractors.extract_date(text)
-        return metadata
+        return metadata_extractors.extract_date(text)
+
+
+    def get_high_confidence_date(data):
+        date_section = data.get('date', {})
+        all_dates = date_section.get('all_dates', [])
+
+        for date_entry in all_dates:
+            if date_entry.get('confidence', '').lower() == 'high':
+                return date_entry  # Return the first high confidence date found
+
+        # If none found, fallback to the main date dict if its confidence is high
+        if date_section.get('confidence', '').lower() == 'high':
+            return date_section
+
+        return None  # or {} if you prefer
 
 
     # def extract_metadata(self, text):

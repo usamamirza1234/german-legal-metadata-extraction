@@ -12,6 +12,7 @@ class ExtractorMetadata:
     def __init__(self, debug=False):
         self.trained_models = {}
         self.debug = debug
+        self.german_date_extractor = ExtractorGermanDate(self.debug)
 
 
     # =================== EASY ENTITIES (START HERE) ===================
@@ -23,9 +24,6 @@ class ExtractorMetadata:
         if self.debug:
             print("📅 Extracting DATE...")
 
-        german_date_extractor = ExtractorGermanDate()
-        german_date_extractor.debug = self.debug
-
-        extracted_date = german_date_extractor.extract_date(text)
+        extracted_date = self.german_date_extractor.find_publishing_date_with_details(text)
 
         return extracted_date  # Already in 'DD.MM.YYYY' format or None
