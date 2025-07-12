@@ -18,6 +18,7 @@ torch
 # datasets
 # evaluate
 # accelerate
+# PyMuPDF
 
 # Install spaCy models
 # python -m spacy download de_core_news_sm

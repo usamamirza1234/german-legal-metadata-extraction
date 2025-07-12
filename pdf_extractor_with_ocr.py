@@ -41,7 +41,6 @@ class PDFExtractorWithOCR:
         try:
             text = self.extractor.extract_text_from_pdf(pdf_path, start_page=2, end_page=2)
 
-
         except Exception as e:
             print(f"❌ Error processing {pdf_path}: {e}")
             return ""

@@ -200,7 +200,7 @@ class ImagePreprocessor:
         largest_contour = contours[0]
         print(len(contours))
         min_area_rect = cv2.minAreaRect(largest_contour)
-        cv2.imwrite("temp/boxes.jpg", new_image)
+        cv2.imwrite("../temp/boxes.jpg", new_image)
         # Determine the angle. Convert it to the value that was originally used to obtain skewed image
         angle = min_area_rect[-1]
         if angle < -45:
