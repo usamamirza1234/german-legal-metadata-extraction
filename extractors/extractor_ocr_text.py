@@ -55,42 +55,52 @@ class ExtractorOCRText:
 
     def extract_with_improved_ocr(self, pdf_path, page_num=1):
         """
-        Extract text using improved OCR with multiple attempts
+        Extract text using improved OCR with multiple attempts.
+        Saves all intermediate files under 'output_dir/{pdf_name}/'.
         """
         try:
             if self.debug:
                 print("✅ ExtractorOCRText.extract_with_improved_ocr: ")
                 print(f"      🖼️ Converting page {page_num} to high-quality image...")
 
-            # Convert with higher DPI for better quality
+            # Convert PDF page to image with higher DPI
             pages = convert_from_path(pdf_path, first_page=page_num, last_page=page_num, dpi=300)
-            output_dir = "output_dir/"
-            os.makedirs(output_dir, exist_ok=True)
 
             if not pages:
                 return ""
 
-            os.path.basename(pdf_path)
-            image_path = f"output_dir/{os.path.basename(pdf_path)}.png"
+            # Get base PDF name without extension
+            pdf_name = os.path.splitext(os.path.basename(pdf_path))[0]
+
+            # Define structured output directory
+            output_dir = os.path.join("output_dir", pdf_name)
+            os.makedirs(output_dir, exist_ok=True)
+
+            # Save the original page image
+            image_path = os.path.join(output_dir, f"page_{page_num}.png")
             original_image = pages[0]
             original_image.save(image_path)
 
             if self.debug:
-                print(f"💾 Saved original image as ", image_path)
+                print(f"💾 Saved original image as {image_path}")
 
             # Initialize preprocessor
             preprocessor = ImagePreprocessor(image_path)
             save_intermediate = True
 
-            # 1. Inverted Images
+            # 1. Invert image for better OCR results
             inverted_image = preprocessor.invert_image()
             if save_intermediate:
-                inverted_path = f"{output_dir}inverted.jpg"
+                inverted_path = os.path.join(output_dir, f"inverted_page_{page_num}.jpg")
                 cv2.imwrite(inverted_path, inverted_image)
-                print("Text after inversion:")
-                # print(preprocessor.extract_fraktur_text(inverted_path))
-                #preprocessor.display(inverted_path)
+
+                if self.debug:
+                    print("Text after inversion:")
+
+                # Return extracted text
                 return preprocessor.extract_fraktur_text(inverted_path)
+
         except Exception as e:
             print(f"      ❌ OCR extraction failed: {e}")
             return ""
+
