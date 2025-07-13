@@ -4,20 +4,23 @@ Consolidated and optimized version with improved performance
 """
 
 import os
-import pickle
 import re
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import List, Dict, Optional, Tuple
-
-import IPython
 import cv2
+import json
+import pickle
 import numpy as np
 import pytesseract
+from datetime import datetime
+from typing import List, Dict, Optional, Tuple, Union
+from dataclasses import dataclass, field
 from pdf2image import convert_from_path
+import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, accuracy_score
 
 
 @dataclass
@@ -187,19 +190,27 @@ class OptimizedMetadataExtractor:
         self.profession_patterns = [
             r'([A-ZÄÖÜ][a-zäöüß]{6,20}fasser)',  # Steinfasser, etc.
             r'([A-ZÄÖÜ][a-zäöüß]{6,20}macher)',  # Uhrmacher, etc.
-            r'([A-ZÄÖÜ][a-zäöüß]{6,20}schmidt)',  # Goldschmidt, etc.
-            r'([A-ZÄÖÜ][a-zäöüß]{6,20}bauer)',  # Instrumentenbauer, etc.
+            r'([A-ZÄÖÜ][a-zäöüß]{6,20}schmidt)', # Goldschmidt, etc.
+            r'([A-ZÄÖÜ][a-zäöüß]{6,20}bauer)',   # Instrumentenbauer, etc.
             r'(Kaufmann|Mechaniker|Elektriker|Bäcker|Schneider|Tischler)'
         ]
 
-        # Date publishing indicators
+        # Date publishing indicators (enhanced)
         self.publishing_indicators = [
-            r'(?:Stand\s+vom|Stcmd\s+vom)',
-            r'(?:Berlin,?\s+den)',
-            r'(?:München,?\s+den)',
-            r'(?:Datum\s*:)',
-            r'(?:Ausgegeben\s+am)',
-            r'(?:Verkündet\s+am)'
+            # Very strong indicators
+            r'(?:Stand\s+vom|Stcmd\s+vom)',  # "Stand vom" or OCR error "Stcmd vom"
+            r'(?:\(.*?Stand\s+vom.*?\))',     # "(Stand vom ...)" in parentheses
+            r'(?:\(.*?Stcmd\s+vom.*?\))',     # "(Stcmd vom ...)" in parentheses
+
+            # Strong indicators
+            r'(?:Berlin,?\s+den)', r'(?:München,?\s+den)', r'(?:Hamburg,?\s+den)',
+            r'(?:Datum\s*:)', r'(?:Ausgegeben\s+am)', r'(?:Verkündet\s+am)',
+
+            # Medium indicators
+            r'(?:Erlaß.*?vom)', r'(?:Erlass.*?vom)',  # "Erlaß ... vom"
+            r'(?:mit\s+Wirkung\s+vom)',              # "mit Wirkung vom"
+            r'(?:in\s+Kraft.*?vom)',                 # "in Kraft ... vom"
+            r'(?:gültig\s+ab)',                      # "gültig ab"
         ]
 
         # Date pattern
@@ -223,10 +234,10 @@ class OptimizedMetadataExtractor:
                         print(f"📖 Processing page {i + 1}...")
 
                     # Convert page to image for OCR
-                    pages = convert_from_path(pdf_path, first_page=i + 1, last_page=i + 1, dpi=300)
+                    pages = convert_from_path(pdf_path, first_page=i+1, last_page=i+1, dpi=300)
                     if pages:
                         # Save temporary image
-                        temp_path = f"temp_page_{i + 1}.png"
+                        temp_path = f"temp_page_{i+1}.png"
                         pages[0].save(temp_path)
 
                         # Process and extract text
@@ -261,65 +272,189 @@ class OptimizedMetadataExtractor:
         - Enclosure in parentheses (common in metadata and footnotes)
 
         Args:
-            text (str): The input text to search for date patterns.
+        text (str): The input text to search for date patterns.
 
         Returns:
-            Optional[datetime]: The most probable publishing date found in the text, or None if no valid date is found.
+        Optional[datetime]: The most probable publishing date found in the text, or None if no valid date is found.
         """
+        if self.debug:
+            print("🗓️ Extracting dates...")
 
-        found_dates = []  # Will store tuples of (datetime object, score)
+        # PRE-PROCESSING: Fix common OCR errors
+        # Handle OCR error where "l." should be "1."
+        text = re.sub(r'\bl\.\s*([a-zA-ZäöüÄÖÜß]+)', r'1. \1', text)
 
-        # Iterate over all regex matches of the date pattern in the text
-        for match in self.date_pattern.finditer(text):
-            # IPython.embed()  # Useful for debugging interactively; you can remove/comment this in production
+        if self.debug:
+            print("   ✅ Applied OCR corrections")
 
-            # Extract day, month, year from the regex groups
-            day_str, month_str, year_str = match.groups()
-            month_normalized = month_str.lower().strip()
+        found_dates = []
 
-            if month_normalized in self.german_months:
+        # Enhanced date pattern to catch more variations
+        enhanced_date_patterns = [
+            # Standard format: "22. September 1938"
+            r'(\d{1,2})\.\s*([a-zA-ZäöüÄÖÜß]+)\s*(\d{4})',
+            # Format with "vom": "vom 1. März 1938"
+            r'vom\s+(\d{1,2})\.\s*([a-zA-ZäöüÄÖÜß]+)\s*(\d{4})',
+            # Format with "den": "den 27. April 1939"
+            r'den\s+(\d{1,2})\.\s*([a-zA-ZäöüÄÖÜß]+)\s*(\d{4})',
+            # Format in parentheses: "(Stand vom 22. September 1938)"
+            r'\(.*?(\d{1,2})\.\s*([a-zA-ZäöüÄÖÜß]+)\s*(\d{4}).*?\)',
+        ]
+
+        for pattern in enhanced_date_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
                 try:
-                    # Convert string values to integers
-                    day = int(day_str)
-                    year = int(year_str)
-                    month_num = self.german_months[month_normalized]  # Convert German month to month number
+                    day_str, month_str, year_str = match.groups()
+                    month_normalized = month_str.lower().strip()
 
-                    # Construct a datetime object from the extracted values
-                    date_obj = datetime(year, month_num, day)
+                    if month_normalized in self.german_months:
+                        day = int(day_str)
+                        year = int(year_str)
+                        month_num = self.german_months[month_normalized]
+                        date_obj = datetime(year, month_num, day)
 
-                    # ---- Begin Scoring Heuristics ---- #
-                    score = 0
+                        # Get context around the match (±150 characters)
+                        context_start = max(0, match.start() - 150)
+                        context_end = min(len(text), match.end() + 150)
+                        context = text[context_start:context_end].lower()
 
-                    # 1. Extract context: 100 characters before and after the match
-                    context = text[max(0, match.start() - 100):match.end() + 100].lower()
+                        # Initialize score
+                        score = 0
+                        match_text = match.group(0).lower()
 
-                    # 2. Check for publishing-related phrases (e.g., "Berlin, den", "Verkündet am")
-                    for indicator in self.publishing_indicators:
-                        if re.search(indicator, context, re.IGNORECASE):
+                        if self.debug:
+                            print(f"   Found date: {match.group(0)} -> {date_obj}")
+
+                        # VERY HIGH PRIORITY: Document signature dates
+                        very_high_priority_indicators = [
+                            r'berlin,?\s+den',  # "Berlin, den" - official document signature
+                            r'münchen,?\s+den',  # "München, den" - official document signature
+                        ]
+
+                        for indicator in very_high_priority_indicators:
+                            if re.search(indicator, context):
+                                score += 30  # Highest priority - document signature
+                                if self.debug:
+                                    print(f"     VERY HIGH PRIORITY: {indicator} -> +30")
+
+                        # HIGH PRIORITY: Publishing date indicators
+                        high_priority_indicators = [
+                            r'stand\s+vom',  # "Stand vom"
+                            r'stcmd\s+vom',  # OCR error "Stcmd vom"
+                            r'\(.*?stand.*?vom',  # "(Stand vom ...)"
+                            r'\(.*?stcmd.*?vom',  # "(Stcmd vom ...)"
+                        ]
+
+                        for indicator in high_priority_indicators:
+                            if re.search(indicator, context):
+                                score += 20  # Very high priority
+                                if self.debug:
+                                    print(f"     HIGH PRIORITY: {indicator} -> +20")
+
+                        # MEDIUM PRIORITY: Official date patterns
+                        medium_priority_indicators = [
+                            r'ausgegeben\s+am',  # "Ausgegeben am"
+                            r'verkündet\s+am',  # "Verkündet am"
+                            r'wirkung\s+vom',  # "mit Wirkung vom"
+                        ]
+
+                        for indicator in medium_priority_indicators:
+                            if re.search(indicator, context):
+                                score += 12
+                                if self.debug:
+                                    print(f"     MEDIUM PRIORITY: {indicator} -> +12")
+
+                        # LOW PRIORITY: Content-related dates (often not publishing dates)
+                        low_priority_indicators = [
+                            r'erlasz.*?vom',  # "Erlaß ... vom" - refers to decree dates, not publishing
+                            r'erlass.*?vom',  # "Erlass ... vom" - refers to decree dates, not publishing
+                        ]
+
+                        for indicator in low_priority_indicators:
+                            if re.search(indicator, context):
+                                score += 5  # Lower priority - these are usually content dates
+                                if self.debug:
+                                    print(f"     LOW PRIORITY: {indicator} -> +5")
+
+                        # PATTERN-SPECIFIC BONUSES
+                        if 'vom' in match_text:
+                            score += 8  # "vom" indicates publishing date
+                            if self.debug:
+                                print(f"     'vom' in match -> +8")
+
+                        if 'den' in match_text:
+                            score += 6  # "den" indicates official date
+                            if self.debug:
+                                print(f"     'den' in match -> +6")
+
+                        # Parentheses bonus (official dates often in parentheses)
+                        if '(' in context and ')' in context:
                             score += 10
+                            if self.debug:
+                                print(f"     Parentheses context -> +10")
 
-                    # 3. Position in document: earlier dates are more likely to be the publishing date
-                    relative_pos = match.start() / len(text)
-                    if relative_pos < 0.3:
-                        score += 5
+                        # Position scoring (earlier = more likely publishing date)
+                        relative_pos = match.start() / len(text)
+                        if relative_pos < 0.2:  # First 20%
+                            score += 8
+                            if self.debug:
+                                print(f"     Early position (top 20%) -> +8")
+                        elif relative_pos < 0.4:  # First 40%
+                            score += 4
+                            if self.debug:
+                                print(f"     Early position (top 40%) -> +4")
 
-                    # 4. Parentheses often wrap dates in footnotes, headers, etc.
-                    if '(' in context and ')' in context:
-                        score += 6
+                        # Year reasonableness bonus
+                        if 1920 <= year <= 1950:
+                            score += 3
+                        elif 1950 <= year <= 2025:
+                            score += 2
 
-                    # Save the date and its associated score
-                    found_dates.append((date_obj, score))
+                        # NEGATIVE INDICATORS (reduce score for content dates)
+                        negative_indicators = [
+                            r'seit\s+dem',  # "seit dem"
+                            r'ab\s+dem',  # "ab dem"
+                            r'erfolgte',  # "erfolgte"
+                            r'geboren.*am',  # "geboren am"
+                            r'verstorben.*am',  # "verstorben am"
+                        ]
 
-                except (ValueError, KeyError):
-                    # Skip this match if parsing fails (e.g., invalid date or unknown month)
+                        for neg_indicator in negative_indicators:
+                            if re.search(neg_indicator, context):
+                                score -= 5
+                                if self.debug:
+                                    print(f"     NEGATIVE: {neg_indicator} -> -5")
+
+                        final_score = max(score, 0)  # Don't go negative
+                        found_dates.append((date_obj, final_score, match.group(0)))
+
+                        if self.debug:
+                            print(f"     Final score: {final_score}")
+
+                except (ValueError, KeyError) as e:
+                    if self.debug:
+                        print(f"     Error parsing date: {e}")
                     continue
 
-        # No dates found
         if not found_dates:
+            if self.debug:
+                print("   ❌ No valid dates found")
             return None
 
-        # Return the date with the highest score
-        return max(found_dates, key=lambda x: x[1])[0]
+        # Sort by score (highest first)
+        found_dates.sort(key=lambda x: x[1], reverse=True)
+
+        if self.debug:
+            print("   📊 All found dates ranked by score:")
+            for i, (date_obj, score, original) in enumerate(found_dates):
+                print(f"     {i + 1}. {original} -> {date_obj.strftime('%Y-%m-%d')} (score: {score})")
+
+        # Return highest scoring date
+        best_date = found_dates[0][0]
+        if self.debug:
+            print(f"   🏆 Selected date: {best_date.strftime('%Y-%m-%d')}")
+
+        return best_date
 
     def extract_with_patterns(self, text: str, patterns: List[str], field_name: str) -> Tuple[Optional[str], float]:
         """Generic pattern-based extraction with confidence scoring"""
@@ -508,7 +643,7 @@ class MetadataEvaluator:
 
     @staticmethod
     def evaluate_extraction(predictions: List[ExtractedMetadata],
-                            ground_truth: List[Dict]) -> Dict[str, float]:
+                          ground_truth: List[Dict]) -> Dict[str, float]:
         """Evaluate extraction performance"""
         if not predictions or not ground_truth:
             return {}
@@ -522,7 +657,7 @@ class MetadataEvaluator:
 
             # Calculate accuracy
             matches = sum(1 for p, t in zip(pred_values, true_values)
-                          if p and t and str(p).lower() == str(t).lower())
+                         if p and t and str(p).lower() == str(t).lower())
             total_with_truth = sum(1 for t in true_values if t)
 
             accuracy = matches / total_with_truth if total_with_truth > 0 else 0.0
@@ -532,3 +667,119 @@ class MetadataEvaluator:
         return results
 
 
+# # Usage example and test function
+# def quick_test():
+#     """Quick test function"""
+#     extractor = OptimizedMetadataExtractor(debug=True)
+#
+#     # Test text
+#     test_text = """
+#     Berufs-Eignungsanforderungen
+#     für den Eintritt in den Lehrberuf
+#     Schmucksteinfasser
+#
+#     bearbeitet vom
+#     Deutschen Ausschuß für Technisches Schulwesen (Datsch) E.V.
+#     Berlin NW7
+#
+#     (Stand vom 22. September 1938)
+#
+#     Verlag von B.G.Teubner in Leipzig und Berlin
+#     """
+#
+#     # Extract metadata
+#     metadata = extractor.extract_all_metadata(test_text)
+#
+#     print("\n" + "="*60)
+#     print("EXTRACTION RESULTS:")
+#     print("="*60)
+#
+#     result_dict = metadata.to_dict()
+#     for key, value in result_dict.items():
+#         if value and key != 'raw_text_preview':
+#             print(f"{key.upper()}: {value}")
+#
+#
+# # Test function for date extraction with your examples
+# def test_date_extraction():
+#     """Test date extraction with the problematic examples"""
+#     extractor = OptimizedMetadataExtractor(debug=True)
+#
+#     # Test case 1: berufearchiv_6322 - should extract "1. März 1938" not "19. März 1938"
+#     text_6322 = """
+#     BERUFSAUSBILDUNC IN DER INDUSTRlE
+#     Präfungsanfordetsungen
+#     fiir den Lehrberuf
+#     Teppichwebsper
+#
+#     Am 19. März 1938 als industrieller Lelirljeruf mit-klimmt
+#     durch die Reichsgruppe Industrie mul die
+#     Ärbeilsgemeinscltaft tlcr Industrie· uml Hamlelsliannncrn
+#     in der Reichswiktscltuktslcammet-
+#
+#     Slimd vmn l. Miit-Z 1938
+#     """
+#
+#     print("=" * 60)
+#     print("TEST 1: berufearchiv_6322 (should be 1. März 1938)")
+#     print("=" * 60)
+#     result1 = extractor.extract_dates(text_6322)
+#     print(f"Result: {result1}")
+#     print()
+#
+#     # Test case 2: berufearchiv_5526 - should find a date
+#     text_5526 = """
+#     Industrie-
+#     Facharbeiterausbildung
+#     Berufsbildungsplan
+#     für den Lehrberuf
+#     Schokolademacher
+#     bearbeitet vom
+#     Deutschen Ausschuß für Technisches Schulwesen E. V. (Datsch)
+#     Berlin NW 7
+#     """
+#
+#     print("=" * 60)
+#     print("TEST 2: berufearchiv_5526 (should find a date)")
+#     print("=" * 60)
+#     result2 = extractor.extract_dates(text_5526)
+#     print(f"Result: {result2}")
+#     print()
+#
+#     # Test case 3: berufearchiv_5542 - should work correctly
+#     text_5542 = """
+#     Fachliche Vorschriften zur Regelung
+#     des Lehrlingswsfms im
+#     Schornsteinfegerhandwerk
+#
+#     Der Neichswirtschaftsniinister hat sich mit den Fachlichen
+#     Vorschriften zur Regelung des Lehrlingswesens im Schornstein-
+#     fegerhandwerk mit dem Erlaß IIl sW 10 861J39 vom 22. April
+#     1939 einverstanden erklärt. Sie treten mit Wirkung vom 1.Juli
+#     1939 in Kraft.
+#
+#     Mit dem Erlasz dieser Vorschriften und dem im August 1936
+#     erfolgten Crlasz der Fachlichen Vorschriften für die Meister-
+#     priifung verfügt das Schornftcinfegerhandwerk«nunmehr über
+#     eine einheitliche Grundlage.
+#
+#     Berlin, den 27. April 1939.
+#     """
+#
+#     print("=" * 60)
+#     print("TEST 3: berufearchiv_5542 (should be 27. April 1939)")
+#     print("=" * 60)
+#     result3 = extractor.extract_dates(text_5542)
+#     print(f"Result: {result3}")
+#
+#
+# if __name__ == "__main__":
+#     # Run the original test
+#     quick_test()
+#
+#     print("\n" + "="*80)
+#     print("TESTING DATE EXTRACTION WITH PROBLEM CASES")
+#     print("="*80)
+#
+#     # Run date extraction tests
+#     test_date_extraction()

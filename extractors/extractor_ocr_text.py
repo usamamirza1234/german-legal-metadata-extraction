@@ -94,11 +94,25 @@ class ExtractorOCRText:
                 inverted_path = os.path.join(output_dir, f"inverted_page_{page_num}.jpg")
                 cv2.imwrite(inverted_path, inverted_image)
 
+                rescale_image = preprocessor.rescale_image(inverted_image,  2.5)
+                rescale_image_path = os.path.join(output_dir, f"rescale_image_page_{page_num}.jpg")
+                cv2.imwrite(rescale_image_path, rescale_image)
+
+                # binarize_image = preprocessor.binarize_image(rescale_image, threshold= 115)
+                # binarize_image_path = os.path.join(output_dir, f"binarize_image_page_{page_num}.jpg")
+                # cv2.imwrite(binarize_image_path, binarize_image)
+
+
+                # grayscale_image = preprocessor.grayscale(rescale_image)
+                # grayscale_image_path = os.path.join(output_dir, f"grayscale_image_page_{page_num}.jpg")
+                # cv2.imwrite(grayscale_image_path, grayscale_image)
+
+
                 if self.debug:
                     print("Text after inversion:")
 
                 # Return extracted text
-                return preprocessor.extract_fraktur_text(inverted_path)
+                return preprocessor.extract_fraktur_text(rescale_image_path)
 
         except Exception as e:
             print(f"      ❌ OCR extraction failed: {e}")
