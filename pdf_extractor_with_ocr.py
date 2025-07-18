@@ -24,7 +24,7 @@ class PDFExtractorWithOCR:
 
 
     #Step 1,
-    def extract_text_from_pdf(self, pdf_path, start_page=1, end_page=None):
+    def extract_text_from_pdf(self, pdf_path, start_page=1, end_page=None, type=None, preprocessing_steps=None):
         """
         Extract text from a PDF between specified pages (inclusive).
         Falls back to OCR if direct extraction fails.
@@ -37,7 +37,18 @@ class PDFExtractorWithOCR:
             if self.debug:
                 print("✅ PDFExtractorWithOCR.extract_text_from_pdf: ")
             extractor = ExtractorOCRText(self.debug)
-            text = extractor.extract_text_from_pdf(pdf_path, start_page=start_page, end_page=end_page)
+
+
+            if type is None:
+                text = extractor.extract_text_from_pdf(pdf_path, start_page=start_page, end_page=end_page)
+            elif type == "custom_preprocessing":
+                text = extractor.extract_with_custom_preprocessing(pdf_path, page_num=start_page, end_page=end_page, preprocessing_steps=preprocessing_steps)
+            # elif type == "batch_process":
+            #     text, all_results = extractor.batch_process_with_different_methods(pdf_path, page_num=start_page, end_page=end_page)
+
+
+
+
         except Exception as e:
             print(f"❌ Error processing {pdf_path}: {e}")
             return ""
